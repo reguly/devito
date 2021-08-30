@@ -33,7 +33,7 @@ jobs:
            pytest-ubuntu-py38-gcc8-omp,
            pytest-ubuntu-py39-gcc9-omp,
            pytest-osx-py37-clang-omp,
-           pytest-docker-py36-gcc-omp
+           pytest-docker-py36-gcc-omp,
            pytest-docker-py36-icc-omp
         ]
         set: [base, adjoint]
