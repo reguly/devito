@@ -7,6 +7,7 @@ from cached_property import cached_property
 from devito.data import LEFT, RIGHT
 from devito.exceptions import InvalidArgument
 from devito.logger import debug
+from devito.symbolics.manipulation import evalmin
 from devito.tools import Pickable, dtype_to_cstr, is_integer
 from devito.types.args import ArgProvider
 from devito.types.basic import Symbol, DataSymbol, Scalar
@@ -1034,6 +1035,14 @@ class AbstractIncrDimension(DerivedDimension):
             return self._max
 
     @cached_property
+    def symbolic_rmin(self):
+        raise NotImplementedError
+
+    @cached_property
+    def symbolic_rmax(self):
+        return evalmin(self._max, self.root.symbolic_max)
+
+    @cached_property
     def symbolic_incr(self):
         try:
             return sympy.Number(self.step)
@@ -1056,6 +1065,30 @@ class IncrDimension(AbstractIncrDimension):
     """
 
     is_SubIterator = True
+
+
+class RIncrDimension(IncrDimension):
+
+    """
+    """
+
+    def __init_finalize__(self, name, parent, _min, _max, rmin=None, rmax=None,
+                          step=None, size=None):
+        super().__init_finalize__(name, parent, _min, _max, step, size)
+        self.rmin = rmin
+        self.rmax = rmax
+
+    @cached_property
+    def symbolic_rmin(self):
+        raise NotImplementedError
+
+    @cached_property
+    def symbolic_rmax(self):
+        # If not provided return a default relaxed max template
+        if self.rmax is not None:
+            return self.rmax
+        else:
+            return evalmin(self._max, self.root.symbolic_max)
 
 
 class CustomDimension(BasicDimension):
