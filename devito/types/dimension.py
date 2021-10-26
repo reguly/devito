@@ -1053,6 +1053,24 @@ class AbstractIncrDimension(DerivedDimension):
     _pickle_args = ['name', 'parent', 'symbolic_min', 'symbolic_max']
     _pickle_kwargs = ['step', 'size']
 
+    @property
+    def func(self):
+        return lambda **kwargs:\
+            self.__class__(name=kwargs.get('name', self.name),
+                           parent=kwargs.get('parent', self.parent),
+                           _min=kwargs.get('_min', self._min),
+                           _max=kwargs.get('_max', self._max),
+                           step=kwargs.get('step', self.step),
+                           size=kwargs.get('size', self.size))
+
+    @cached_property
+    def _arg_names(self):
+        try:
+            return (self.step.name,)
+        except AttributeError:
+            # `step` not a Symbol
+            return ()
+
 
 class IncrDimension(AbstractIncrDimension):
 
@@ -1080,7 +1098,11 @@ class RIncrDimension(IncrDimension):
 
     @cached_property
     def symbolic_rmin(self):
-        raise NotImplementedError
+        # If not provided return a default relaxed max template
+        if self.rmin is not None:
+            return self.rmin
+        else:
+            return self.symbolic_min
 
     @cached_property
     def symbolic_rmax(self):
@@ -1089,6 +1111,18 @@ class RIncrDimension(IncrDimension):
             return self.rmax
         else:
             return evalmin(self._max, self.root.symbolic_max)
+
+    @property
+    def func(self):
+        return lambda **kwargs:\
+            self.__class__(name=kwargs.get('name', self.name),
+                           parent=kwargs.get('parent', self.parent),
+                           _min=kwargs.get('_min', self._min),
+                           _max=kwargs.get('_max', self._max),
+                           step=kwargs.get('step', self.step),
+                           size=kwargs.get('size', self.size),
+                           rmax=kwargs.get('rmax', self.rmax),
+                           rmin=kwargs.get('rmin', self.rmin))
 
 
 class CustomDimension(BasicDimension):
