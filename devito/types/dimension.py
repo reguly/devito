@@ -1036,7 +1036,7 @@ class AbstractIncrDimension(DerivedDimension):
 
     @cached_property
     def symbolic_rmin(self):
-        raise NotImplementedError
+        return self.symbolic_min
 
     @cached_property
     def symbolic_rmax(self):
@@ -1048,11 +1048,7 @@ class AbstractIncrDimension(DerivedDimension):
             return sympy.Number(self.step)
         except (TypeError, ValueError):
             return self.step
-
-    # Pickling support
-    _pickle_args = ['name', 'parent', 'symbolic_min', 'symbolic_max']
-    _pickle_kwargs = ['step', 'size']
-
+    '''
     @property
     def func(self):
         return lambda **kwargs:\
@@ -1062,7 +1058,7 @@ class AbstractIncrDimension(DerivedDimension):
                            _max=kwargs.get('_max', self._max),
                            step=kwargs.get('step', self.step),
                            size=kwargs.get('size', self.size))
-
+    '''
     @cached_property
     def _arg_names(self):
         try:
@@ -1090,8 +1086,8 @@ class RIncrDimension(IncrDimension):
     """
     """
 
-    def __init_finalize__(self, name, parent, _min, _max, rmin=None, rmax=None,
-                          step=None, size=None):
+    def __init_finalize__(self, name, parent, _min, _max, step=None, size=None,
+                          rmin=None, rmax=None):
         super().__init_finalize__(name, parent, _min, _max, step, size)
         self.rmin = rmin
         self.rmax = rmax
