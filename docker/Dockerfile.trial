@@ -1,6 +1,4 @@
-FROM intel/oneapi-hpckit
-
-RUN rm /bin/sh && ln -s /bin/bash /bin/sh
+FROM intel/oneapi-hpckit:2021.4-devel-ubuntu18.04
 
 RUN apt-get update -y && \
     apt-get install -y -q \
@@ -10,20 +8,19 @@ RUN apt-get update -y && \
         curl \
         wget \
         openssh-server \
-        openssh-client
+        openssh-client \
+        python3-pip
 
 ADD ./requirements.txt /app/requirements.txt
 ADD ./requirements-optional.txt /app/requirements-optional.txt
 ADD ./requirements-mpi.txt /app/requirements-mpi.txt
 ADD ./setup.py /app/setup.py
 
-RUN which mpicc
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir jupyter && \
-    pip install --no-cache-dir wheel && \
-    pip install --no-cache-dir -r /app/requirements.txt && \
-    pip install --no-cache-dir -r /app/requirements-optional.txt && \
-    pip install --no-cache-dir -r /app/requirements-mpi.txt && \  
+RUN pip3 install --no-cache-dir --upgrade pip && \
+    pip3 install --no-cache-dir jupyter && \
+    pip3 install --no-cache-dir wheel && \
+    pip3 install --no-cache-dir -r /app/requirements.txt && \
+    pip3 install --no-cache-dir -r /app/requirements-optional.txt && \
     rm -rf ~/.cache/pip
 
 ADD ./devito /app/devito
@@ -51,7 +48,7 @@ ENV DEVITO_LANGUAGE="openmp"
 
 # debug ON to see Intel Compiler in logs
 ENV DEVITO_LOGGING="DEBUG"
-RUN python /app/examples/seismic/acoustic/acoustic_example.py
+RUN python3 /app/examples/seismic/acoustic/acoustic_example.py
 
 EXPOSE 8888
 ENTRYPOINT ["/docker-entrypoint.sh"]

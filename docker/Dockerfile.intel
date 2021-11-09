@@ -1,4 +1,4 @@
-FROM python:3.6
+FROM python:3.7
 FROM intel/oneapi-hpckit:latest
 
 RUN rm /bin/sh && ln -s /bin/bash /bin/sh
@@ -12,6 +12,8 @@ RUN apt-get update -y && \
         wget \
         openssh-server \
         openssh-client
+
+RUN export LC_ALL=C
 
 RUN source /opt/intel/oneapi/compiler/latest/env/vars.sh
 RUN source /opt/intel/oneapi/mpi/latest/env/vars.sh
