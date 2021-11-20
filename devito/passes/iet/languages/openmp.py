@@ -37,7 +37,7 @@ class OmpIteration(ParallelIteration):
 
     @classmethod
     def _make_clauses(cls, ncollapse=None, chunk_size=None, nthreads=None,
-                      reduction=None, schedule=None, thread_limit=None, **kwargs):
+                      reduction=None, schedule=None, **kwargs):
         clauses = []
 
         clauses.append('collapse(%d)' % (ncollapse or 1))
@@ -70,17 +70,18 @@ class DeviceOmpIteration(OmpIteration):
 
     @classmethod
     def _make_construct(cls, nthreads=None, parallel=False, **kwargs):
-        if nthreads and nthreads > 10:
-            return 'omp target teams distribute parallel for thread_limit(64)'
-        elif nthreads:
-            return 'omp parallel for'
-        else:
+        if nthreads is None:
             return 'omp target teams distribute parallel for'
+        elif nthreads > 10:
+            return 'omp target teams distribute thread_limit({})'.format(nthreads)
+        else:
+            return 'omp parallel for'
 
     @classmethod
     def _make_clauses(cls, **kwargs):
         kwargs['chunk_size'] = False
         kwargs['nthreads'] = False
+
         clauses = super()._make_clauses(**kwargs)
 
         indexeds = FindSymbols('indexeds').visit(kwargs['nodes'])

@@ -45,7 +45,7 @@ class DeviceOperatorMixin(object):
     """
 
     GPU_FIT = 'all-fallback'
-    TLIMIT = 128
+    THREAD_LIMIT = 1
     """
     Assuming all functions fit into the gpu memory.
     """
@@ -94,7 +94,7 @@ class DeviceOperatorMixin(object):
         o['par-nested'] = oo.pop('par-nested', cls.PAR_NESTED)
         o['par-disabled'] = oo.pop('par-disabled', True)  # No host parallelism by default
         o['gpu-fit'] = as_tuple(oo.pop('gpu-fit', cls._normalize_gpu_fit(**kwargs)))
-        o['thread-limit'] = oo.pop('thread-limit', cls.TLIMIT)
+        o['thread-limit'] = oo.pop('thread-limit', cls.THREAD_LIMIT)
 
         # Misc
         o['optcomms'] = oo.pop('optcomms', True)
@@ -132,7 +132,6 @@ class DeviceNoopOperator(DeviceOperatorMixin, CoreOperator):
 
         # GPU parallelism
         parizer = cls._Target.Parizer(sregistry, options, platform)
-
         parizer.make_parallel(graph)
         parizer.initialize(graph)
 
@@ -186,6 +185,7 @@ class DeviceAdvOperator(DeviceOperatorMixin, CoreOperator):
         # Reduce flops
         clusters = cse(clusters, sregistry)
 
+        # Loop blocking
         clusters = blocking(clusters, options)
 
         return clusters
