@@ -1,0 +1,178 @@
+# Copyright (c) 2019-2020 Intel Corporation.
+# SPDX-License-Identifier: BSD-3-Clause
+
+FROM ubuntu:18.04 as build
+
+RUN mkdir -p /opt/build && mkdir -p /opt/dist
+
+RUN apt-get update && \
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    ca-certificates curl
+
+# install cmake
+RUN cd /opt/build && \
+    curl -LO https://github.com/Kitware/CMake/releases/download/v3.20.2/cmake-3.20.2-linux-x86_64.sh && \
+    mkdir -p /opt/dist//usr/local && \
+    /bin/bash cmake-3.20.2-linux-x86_64.sh --prefix=/opt/dist//usr/local --skip-license
+
+FROM ubuntu:18.04
+
+COPY --from=build /opt/dist /
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=1
+
+# install OS tools
+RUN apt-get update -y && \
+apt-get install -y --no-install-recommends -o=Dpkg::Use-Pty=0 \
+build-essential \
+pkg-config \
+ca-certificates \
+gnupg \
+libarchive13 \
+wget
+
+COPY third-party-programs.txt /
+
+# add apt repo public key
+ARG url=https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB
+RUN wget $url
+RUN file=$(basename "$url") && \
+    apt-key add "$file" && \
+    rm "$file"
+
+# configure the repository
+ARG repo=https://apt.repos.intel.com/oneapi
+RUN echo "deb $repo all main" > /etc/apt/sources.list.d/oneAPI.list
+
+# disable cert check
+ARG disable_cert_check=
+RUN if [ "$disable_cert_check" ] ; then echo "Acquire::https::Verify-Peer \"false\";\nAcquire::https::Verify-Host \"false\";" > /etc/apt/apt.conf.d/99-disable-cert-check ; fi
+
+# install Intel(R) oneAPI Base Toolkit
+RUN apt-get update -y && \
+apt-get install -y --no-install-recommends -o=Dpkg::Use-Pty=0 \
+intel-basekit-getting-started \
+intel-oneapi-advisor \
+intel-oneapi-ccl-devel \
+intel-oneapi-common-licensing \
+intel-oneapi-common-vars \
+intel-oneapi-compiler-dpcpp-cpp \
+intel-oneapi-dal-devel \
+intel-oneapi-dev-utilities \
+intel-oneapi-dnnl-devel \
+intel-oneapi-dpcpp-debugger \
+intel-oneapi-ipp-devel \
+intel-oneapi-ippcp-devel \
+intel-oneapi-libdpstd-devel \
+intel-oneapi-mkl-devel \
+intel-oneapi-onevpl-devel \
+intel-oneapi-python \
+intel-oneapi-tbb-devel \
+intel-oneapi-vtune \
+--
+
+# install Intel GPU drivers
+RUN echo 'deb [trusted=yes arch=amd64] https://repositories.intel.com/graphics/ubuntu bionic main' \
+> /etc/apt/sources.list.d/intel-graphics.list
+
+ARG url=https://repositories.intel.com/graphics/intel-graphics.key
+RUN wget $url && file=$(basename "$url") && \
+    file=$(basename "$url") && \
+    apt-key add "$file" && \
+    rm "$file"
+
+RUN apt-get update -y && \
+apt-get install -y --no-install-recommends -o=Dpkg::Use-Pty=0 \
+intel-opencl \
+intel-level-zero-gpu \
+level-zero \
+level-zero-devel
+
+# install Intel(R) oneAPI HPC Toolkit
+RUN apt-get update -y && \
+apt-get install -y --no-install-recommends -o=Dpkg::Use-Pty=0 \
+intel-hpckit-getting-started \
+intel-oneapi-clck \
+intel-oneapi-common-licensing \
+intel-oneapi-common-vars \
+intel-oneapi-compiler-dpcpp-cpp-and-cpp-classic \
+intel-oneapi-compiler-fortran \
+intel-oneapi-dev-utilities \
+intel-oneapi-inspector \
+intel-oneapi-itac \
+intel-oneapi-mpi-devel \
+--
+
+# setvars.sh environment variables
+RUN env > default_env_vars; \
+. /opt/intel/oneapi/setvars.sh; \
+env > env_vars; \
+diff default_env_vars env_vars \
+| grep ">" | sed  s/..// \
+| sort \
+| sed 's/^/export /' | sed "s/=/='/" | sed "s/$/'/" \
+>> /root/.oneapi_env_vars; \
+# clean up
+rm *env_vars; \
+rm -rf /var/lib/apt/lists/*
+
+
+## INSTALL PYTHON
+
+RUN apt-get install -y --no-install-recommends python3-dev
+RUN apt-get install -y --no-install-recommends python3-venv
+
+## INSTALL DEVITO
+
+ADD ./requirements.txt /app/requirements.txt
+ADD ./requirements-optional.txt /app/requirements-optional.txt
+# ADD ./requirements-mpi.txt /app/requirements-mpi.txt
+
+RUN python3 -m venv /venv
+RUN /venv/bin/pip install --no-cache-dir --upgrade pip
+RUN /venv/bin/pip install --no-cache-dir jupyter
+RUN /venv/bin/pip install --no-cache-dir wheel
+RUN /venv/bin/pip install --no-cache-dir -r /app/requirements.txt
+RUN /venv/bin/pip install --no-cache-dir -r /app/requirements-optional.txt
+# RUN /venv/bin/pip install --no-cache-dir -r /app/requirements-mpi.txt
+RUN rm -rf ~/.cache/pip
+
+ADD ./devito /app/devito
+ADD ./tests /app/tests
+ADD ./examples /app/examples
+ADD ./benchmarks /app/benchmarks
+COPY setup.cfg /app/
+ADD docker/entrypoint.sh /docker-entrypoint.sh
+
+RUN chmod +x /docker-entrypoint.sh
+RUN apt-get install -y --no-install-recommends nano
+## CREATE APP USER
+
+# Set the home directory to our app user's home.
+ENV HOME=/app
+ENV APP_HOME=/app
+
+# Create the home directory for the new app user.
+# Create an app user so our program doesn't run as root.
+# Chown all the files to the app user.
+RUN mkdir -p /app
+RUN groupadd -r app
+RUN useradd -r -g app -d /app -s /sbin/nologin -c "Docker image user" app
+RUN chown -R app:app $APP_HOME
+RUN chown -R app:app /docker-entrypoint.sh
+RUN chown -R app:app /venv
+
+# Change to the app user.
+USER app
+WORKDIR /app
+
+## SET ENVIRONMET VARIABLES FOR OPENMP OFFLOAD
+
+ENV DEVITO_ARCH="intel"
+ENV DEVITO_LANGUAGE="openmp"
+ENV DEVITO_LOGGING="DEBUG"
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
+
+## ENTRYPOINT ["bash", "-c", "source /root/.oneapi_env_vars && \"$@\"", "bash"]
