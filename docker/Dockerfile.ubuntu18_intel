@@ -1,3 +1,14 @@
+##############################################################
+# This Dockerfile contains Devito codes + Intel HPC toolkit.
+#
+# BUILD:
+#   docker build --network=host --file docker/Dockerfile.intel --tag devito/intel:1.0 .
+#
+# RUN:
+#   docker run --rm -it -p 8888:8888 -p 8787:8787 -p 8786:8786 devito
+#   docker run --rm -it -p 8888:8888 -p 8787:8787 -p 8786:8786 --device=/dev/infiniband/uverbs0 --device=/dev/infiniband/rdma_cm  devito
+##############################################################
+# Inherited from: https://github.com/intel/oneapi-containers/blob/master/images/docker/hpckit/Dockerfile.ubuntu-18.04
 # Copyright (c) 2019-2020 Intel Corporation.
 # SPDX-License-Identifier: BSD-3-Clause
 
@@ -128,9 +139,6 @@ python3-venv \
 gcc \
 g++
 
-# RUN . /opt/intel/oneapi/mpi/latest/env/vars.sh && \
-#     . /opt/intel/oneapi/compiler/latest/env/vars.sh
-
 ## INSTALL DEVITO
 
 ADD ./requirements.txt /app/requirements.txt
@@ -161,19 +169,15 @@ ADD docker/nvdashboard.json /app/nvdashboard.json
 
 RUN chmod +x /print-defaults /jupyter /tests /docker-entrypoint.sh && \
     /venv/bin/jupyter serverextension enable dask_labextension 
-#    /venv/bin/jupyter lab workspaces import /app/nvdashboard.json
 
-## Environment Variables for OpenACC Builds
-# Reference: https://github.com/devitocodes/devito/wiki/FAQ#can-i-manually-modify-the-c-code-generated-by-devito-and-test-these-modifications
-# Set arch to PGI (pgcc)
-ENV DEVITO_ARCH="icc" 
+## Environment Variables for Intel Compilers use
+# Set arch to Intel (icc)
+ENV DEVITO_ARCH="intel" 
 ENV DEVITO_LANGUAGE="openmp"
-
 
 # Enable logging, Options: [unset, PERF, DEBUG]
 ENV DEVITO_LOGGING=DEBUG 
  
-
 ## Create App user 
 # Set the home directory to our app user's home.
 ENV HOME=/app
@@ -190,10 +194,18 @@ RUN mkdir -p /app && \
     chown app:app /print-defaults && \
     chown app:app /tests && \
     chown app:app /jupyter
-    
+
 # Change to the app user.
 USER app
 WORKDIR /app
 
-CMD ["bash"]
+CMD ["/bin/bash"]
+
+ARG ICC_HOME=/opt/intel/oneapi/compiler/latest/
+ARG MPICC_HOME=/opt/intel/oneapi/mpi/latest/
+ENV PATH $MPICC_HOME/bin:$MPICC_HOME/include:$ICC_HOME/linux/bin/intel64:$ICC_HOME/libfabric/bin:${PATH}
+ENV LD_LIBRARY_PATH $ICC_HOME/linux/lib:$ICC_HOME/linux/compiler/lib/intel64_lin:$MPICC_HOME/lib:$MPICC_HOME/include:${LD_LIBRARY_PATH}
+
+# ENTRYPOINT ["source /root/.oneapi_env_vars && \"$@\"", "/docker-entrypoint.sh"]
+# ENTRYPOINT ["bash", "-c", ". /opt/intel/oneapi/mpi/latest/env/vars.sh  && \"$@\"", "../docker-entrypoint.sh"]
 ENTRYPOINT ["/docker-entrypoint.sh"]
