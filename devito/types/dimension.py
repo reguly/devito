@@ -7,7 +7,7 @@ from cached_property import cached_property
 from devito.data import LEFT, RIGHT
 from devito.exceptions import InvalidArgument
 from devito.logger import debug
-from devito.symbolics.manipulation import evalmin
+from devito.symbolics.manipulation import evalrel
 from devito.tools import Pickable, dtype_to_cstr, is_integer
 from devito.types.args import ArgProvider
 from devito.types.basic import Symbol, DataSymbol, Scalar
@@ -1064,7 +1064,7 @@ class AbstractIncrDimension(DerivedDimension):
 
     @cached_property
     def symbolic_rmax(self):
-        return evalmin(self._max, self.root.symbolic_max)
+        return evalrel(min, [self._max, self.root.symbolic_max])
 
     @cached_property
     def symbolic_incr(self):
@@ -1146,7 +1146,7 @@ class RIncrDimension(IncrDimension):
         if self.rmax is not None:
             return self.rmax
         else:
-            return evalmin(self._max, self.root.symbolic_max)
+            return evalrel(min, [self._max, self.root.symbolic_max])
 
     @cached_property
     def symbolic_rstep(self):
