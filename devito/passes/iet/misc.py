@@ -131,8 +131,8 @@ def relax_incr_dimensions(iet, **kwargs):
             defmax = list(dict.fromkeys(defmax))
 
             # Interval care
-            iter_min = evalmax(defmin)
-            iter_max = evalmin(defmax)
+            iter_min = evalrel(max, defmin)
+            iter_max = evalrel(min, defmax)
 
             mapper[i] = i._rebuild(limits=(iter_min, iter_max, i.step))
 
