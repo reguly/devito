@@ -1,7 +1,7 @@
 from functools import partial
 from hashlib import sha1
 from os import environ, path
-from distutils import version
+from packaging.version import Version
 from subprocess import DEVNULL, PIPE, CalledProcessError, check_output, check_call, run
 import platform
 import warnings
@@ -34,9 +34,9 @@ def sniff_compiler_version(cc):
         res = run([cc, "--version"], stdout=PIPE, stderr=DEVNULL)
         ver = res.stdout.decode("utf-8")
         if not ver:
-            return version.LooseVersion("unknown")
+            return Version("unknown")
     except UnicodeDecodeError:
-        return version.LooseVersion("unknown")
+        return Version("unknown")
     except FileNotFoundError:
         error("The `%s` compiler isn't available on this system" % cc)
         sys.exit(1)
@@ -54,7 +54,7 @@ def sniff_compiler_version(cc):
     else:
         compiler = "unknown"
 
-    ver = version.LooseVersion("unknown")
+    ver = Version("unknown")
     if compiler in ["gcc", "icc"]:
         try:
             # gcc-7 series only spits out patch level on dumpfullversion.
@@ -66,7 +66,7 @@ def sniff_compiler_version(cc):
                 ver = res.stdout.decode("utf-8")
                 ver = '.'.join(ver.strip().split('.')[:3])
                 if not ver:
-                    return version.LooseVersion("unknown")
+                    return Version("unknown")
             ver = version.StrictVersion(ver)
         except UnicodeDecodeError:
             pass
@@ -176,7 +176,7 @@ class Compiler(GCCToolchain):
             try:
                 self.version = version.StrictVersion(str(float(self.suffix)))
             except (TypeError, ValueError):
-                self.version = version.LooseVersion(self.suffix)
+                self.version = Version(self.suffix)
         else:
             # Knowing the version may still be useful to pick supported flags
             self.version = sniff_compiler_version(self.CC)
