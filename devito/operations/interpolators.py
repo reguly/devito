@@ -57,10 +57,11 @@ class Interpolation(UnevaluatedSparseOperation):
     Evaluates to a list of Eq objects.
     """
 
-    def __new__(cls, expr, offset, increment, self_subs, interpolator, callback):
+    def __new__(cls, field, expr, offset, increment, self_subs, interpolator, callback):
         obj = super().__new__(cls, interpolator, callback)
 
         # TODO: unused now, but will be necessary to compute the adjoint
+        obj.field = field
         obj.expr = expr
         obj.offset = offset
         obj.increment = increment
@@ -207,7 +208,7 @@ class LinearInterpolator(GenericInterpolator):
 
         return idx_subs, temps
 
-    def interpolate(self, expr, offset=0, increment=False, self_subs={}):
+    def interpolate(self, field, expr, offset=0, increment=False, self_subs={}):
         """
         Generate equations interpolating an arbitrary expression into ``self``.
 
@@ -228,10 +229,10 @@ class LinearInterpolator(GenericInterpolator):
                 # E.g., a generic SymPy expression or a number
                 _expr = expr
 
-            variables = list(retrieve_function_carriers(_expr))
+            variables = list(retrieve_function_carriers(_expr)) + [field]
 
             # Need to get origin of the field in case it is staggered
-            # TODO: handle each variable staggereing spearately
+            # TODO: handle each variable staggering separately
             field_offset = variables[0].origin
             # List of indirection indices for all adjacent grid points
             idx_subs, temps = self._interpolation_indices(variables, offset,

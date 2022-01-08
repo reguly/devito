@@ -5,9 +5,10 @@ import pytest
 from sympy import Float
 
 from devito import (Grid, Operator, Dimension, SparseFunction, SparseTimeFunction,
-                    Function, TimeFunction,
+                    Function, TimeFunction, Eq, Inc,
                     PrecomputedSparseFunction, PrecomputedSparseTimeFunction,
                     MatrixSparseTimeFunction)
+from devito.types import Scalar
 from examples.seismic import (demo_model, TimeAxis, RickerSource, Receiver,
                               AcquisitionGeometry, Model)
 from examples.seismic.acoustic import AcousticWaveSolver
@@ -641,9 +642,31 @@ def test_decompose_src_to_aligned(shape, so, tn, inj):
     # Source ID function to hold unique id for each point affected
     s_id = Function(name='s_id', shape=model.grid.shape, dimensions=model.grid.dimensions,
                     space_order=0, dtype=np.int32)
+    s_m = Function(name='s_m', shape=model.grid.shape, dimensions=model.grid.dimensions,
+                   space_order=0, dtype=np.int32)
 
     nzinds = (arr[:, 0], arr[:, 1], arr[:, 2])
     s_id.data[nzinds] = tuple(np.arange(len(nzinds[0])))
+    s_m.data[nzinds[0], nzinds[1], nzinds[2]] = 1
+
+    nnz_shape = (model.grid.shape[0], model.grid.shape[1])  # Change only 3rd dim
+    nnz = Function(name='nnz', shape=(list(nnz_shape)), dimensions=(x, y),
+                   space_order=0, dtype=np.int32)
+    nnz.data[:, :] = s_m.data[:, :, :].sum(2)
+    inds = np.where(s_m.data == 1.)
+    print("Grid - source positions:", inds)
+    maxz = len(np.unique(inds[-1]))
+    # Change only 3rd dim
+    u = TimeFunction(name="u", grid=model.grid, space_order=so, time_order=2)
+    sp_zi = Dimension(name='sp_zi')
+    sparse_shape = (model.grid.shape[0], model.grid.shape[1], maxz)
+    sp_source_mask = Function(name='sp_source_mask', shape=(list(sparse_shape)),
+                              dimensions=(x, y, sp_zi), space_order=0, dtype=np.int32)
+
+    # Now holds IDs
+    sp_source_mask.data[inds[0], inds[1], :] = tuple(inds[2][:len(np.unique(inds[2]))])
+    # seems good
+    # import pdb;pdb.set_trace()
 
     # Helper dimension to schedule loops of different sizes together
     id_dim = Dimension(name='id_dim')
@@ -659,6 +682,22 @@ def test_decompose_src_to_aligned(shape, so, tn, inj):
     op1 = Operator(save_src_term)
     op1.apply()
 
+    zind = Scalar(name='zind', dtype=np.int32)
+    eq0 = Eq(sp_zi.symbolic_max, nnz[x, y] - 1,
+             implicit_dims=(time, x, y))
+    eq1 = Eq(zind, sp_source_mask[x, y, sp_zi], implicit_dims=(time, x, y, sp_zi))
+
+    # inj_u = source_mask[x, y, zind] * save_src_u[time, source_id[x, y, zind]]
+    # Is source_mask needed /
+    inj_u = save_src[time, s_id[x, y, zind]]
+
+    t = model.grid.stepping_dim
+    eq_u = Inc(u.forward[t+1, x, y, zind], inj_u, implicit_dims=(time, x, y, sp_zi))
+
+    tteqs = (eq0, eq1, eq_u)
+    op = Operator(tteqs)
+    op.apply()
+
     # Assert that first, last as well as other indices are as expected
     assert(s_id.data[nzinds[0][0], nzinds[1][0], nzinds[2][0]] == 0)
     assert(s_id.data[nzinds[0][-1], nzinds[1][-1], nzinds[2][-1]] == len(nzinds[0])-1)
@@ -668,3 +707,82 @@ def test_decompose_src_to_aligned(shape, so, tn, inj):
     # Assert that first, last as well as other indices are as expected
     assert (src.shape[0] == save_src.shape[0])
     assert (8*src.shape[1] == save_src.shape[1])
+    import pdb;pdb.set_trace()
+
+
+@pytest.mark.parametrize('inj', ('r_id', '1 + r_id', 'r_id[0, 0, r_id]'))
+@pytest.mark.parametrize('shape', [(50, 50, 50)])
+@pytest.mark.parametrize('so', (2, 4, 8))
+@pytest.mark.parametrize('tn', (20, 40, 80))
+def test_decompose_rec_to_aligned(shape, so, tn, inj):
+    """ Test decomposition of non-aligned receiver wavelets to equivalent ones
+        aligned to grid points receiver wavelets
+    """
+
+    spacing = (10., 10., 10)
+    origin = (0., 0., 0.)
+
+    # Initialize v field
+    v = np.empty(shape, dtype=np.float32)
+    v[:, :, :int(shape[2]/2)] = 2
+    v[:, :, int(shape[2]/2):] = 1
+
+    # Construct model
+    model = Model(vp=v, origin=origin, shape=shape, spacing=spacing, space_order=so)
+
+    x, y, z = model.grid.dimensions  # Get dimensions
+
+    t0 = 0  # Simulation starts a t=0
+    dt = 1  # model.critical_dt  # Time step from model grid spacing
+    tn = tn
+    time_range = TimeAxis(start=t0, stop=tn, step=dt)
+    f0 = 0.010  # Source peak frequency is 10Hz (0.010 kHz)
+    rec = Receiver(name='rec', grid=model.grid, f0=f0,
+                   npoint=9, time_range=time_range)
+
+    # First, position source centrally in all dimensions, then set depth
+    stx = 0.125
+    ste = 0.9
+    stepx = (ste-stx)/int(np.sqrt(rec.npoint))
+
+    # Uniform x,y source spread
+    rec.coordinates.data[:, :2] = \
+        np.array(np.meshgrid(np.arange(stx, ste,
+                 stepx), np.arange(stx, ste, stepx))).T.reshape(-1, 2) \
+        * np.array(model.domain_size[:1])
+
+    rec.coordinates.data[:, -1] = 20  # Depth is 20m
+
+    # Get positions affected by sparse operator
+    arr = rec.gridpoints_all
+
+    # Source ID function to hold unique id for each point affected
+    r_id = Function(name='r_id', shape=model.grid.shape, dimensions=model.grid.dimensions,
+                    space_order=0, dtype=np.int32)
+
+    nzinds = (arr[:, 0], arr[:, 1], arr[:, 2])
+    r_id.data[nzinds] = tuple(np.arange(len(nzinds[0])))
+
+    # Helper dimension to schedule loops of different sizes together
+    id_dim = Dimension(name='id_dim')
+
+    time = model.grid.time_dim
+    save_rec = TimeFunction(name='save_rec', shape=(rec.shape[0], len(arr)),
+                            dimensions=(time, id_dim))
+
+    inj = eval(inj)
+    import pdb;pdb.set_trace()
+    save_rec_term = rec.interpolate(field=save_rec[time, inj], expr=rec * dt**2 / model.m)
+
+    op1 = Operator(save_rec_term)
+    op1.apply()
+
+    # Assert that first, last as well as other indices are as expected
+    assert(r_id.data[nzinds[0][0], nzinds[1][0], nzinds[2][0]] == 0)
+    assert(r_id.data[nzinds[0][-1], nzinds[1][-1], nzinds[2][-1]] == len(nzinds[0])-1)
+    assert(r_id.data[nzinds[0][len(nzinds[0])-1], nzinds[1][len(nzinds[0])-1],
+           nzinds[2][len(nzinds[0])-1]] == len(nzinds[0])-1)
+
+    # Assert that first, last as well as other indices are as expected
+    assert (rec.shape[0] == save_rec.shape[0])
+    assert (8*rec.shape[1] == save_rec.shape[1])

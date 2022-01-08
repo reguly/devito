@@ -1459,13 +1459,14 @@ class MatrixSparseTimeFunction(AbstractSparseTimeFunction):
         """Creates a :class:`sympy.Eq` equation for the interpolation
         of an expression onto this sparse point collection.
 
-        :param expr: The expression to interpolate.
-        :param offset: Additional offset from the boundary for
-                       absorbing boundary conditions.
-        :param u_t: (Optional) time index to use for indexing into
-                    field data in `expr`.
-        :param p_t: (Optional) time index to use for indexing into
-                    the sparse point data.
+        Parameters
+        ----------
+        expr : expr-like
+            Input expression to interpolate.
+        offset : int, optional
+            Additional offset from the boundary for absorbing boundary conditions.
+        u_t: (Optional) time index to use for indexing into field data in `expr`.
+        p_t: (Optional) time index to use for indexing into the sparse point data.
         """
         expr = indexify(expr)
 
