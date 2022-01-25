@@ -332,7 +332,7 @@ def generate_block_shapes(blockable, args, level):
             for v in options['blocksize-l1']:
                 # To be a valid blocksize, it must be smaller than and divide evenly
                 # the parent's block size
-                if all(v <= i/4 and i % v == 0 for _, i in bs):
+                if all(v <= i and i % v == 0 for _, i in bs):
                     ret.append(bs + tuple((d.step, v) for d in level_1))
             ret.remove(bs)
 
