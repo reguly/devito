@@ -2,12 +2,10 @@ from collections import Counter
 from sympy import Mod
 
 from devito.ir.clusters import Queue
-from devito.ir.support import (SEQUENTIAL, SKEWABLE, TILABLE, Interval, IntervalGroup,
-                               IterationSpace)
-from devito.symbolics import uxreplace
-from devito.types import BlockDimension
-
-from devito.symbolics import xreplace_indices
+from devito.ir.support import (SEQUENTIAL, SKEWABLE, TILABLE, PARALLEL, Interval,
+                               IntervalGroup, IterationSpace)
+from devito.symbolics import uxreplace, INT, xreplace_indices, evalrel, retrieve_indexed
+from devito.types import RIncrDimension
 
 __all__ = ['blocking', 'skewing']
 

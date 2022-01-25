@@ -14,7 +14,7 @@ from devito.types.basic import Symbol, DataSymbol, Scalar
 
 __all__ = ['Dimension', 'SpaceDimension', 'TimeDimension', 'DefaultDimension',
            'CustomDimension', 'SteppingDimension', 'SubDimension', 'ConditionalDimension',
-           'dimensions', 'ModuloDimension', 'IncrDimension', 'BlockDimension']
+           'dimensions', 'ModuloDimension', 'IncrDimension', 'BlockDimension', 'RIncrDimension']
 
 
 Thickness = namedtuple('Thickness', 'left right')
@@ -281,9 +281,12 @@ class Dimension(ArgProvider):
         """
         if self.min_name not in args:
             raise InvalidArgument("No runtime value for %s" % self.min_name)
-        if interval.is_Defined and args[self.min_name] + interval.lower < 0:
-            raise InvalidArgument("OOB detected due to %s=%d" % (self.min_name,
-                                                                 args[self.min_name]))
+        try:
+            if interval.is_Defined and args[self.min_name] + interval.lower < 0:
+                raise InvalidArgument("OOB detected due to %s=%d" % (self.min_name,
+                                      args[self.min_name]))
+        except TypeError:
+            pass
 
         if self.max_name not in args:
             raise InvalidArgument("No runtime value for %s" % self.max_name)
@@ -293,9 +296,12 @@ class Dimension(ArgProvider):
             else:
                 # Autopadding causes non-integer upper limit
                 upper = interval.upper.subs(args)
-            if args[self.max_name] + upper >= size:
-                raise InvalidArgument("OOB detected due to %s=%d" % (self.max_name,
-                                                                     args[self.max_name]))
+            try:
+                if args[self.max_name] + upper >= size:
+                    raise InvalidArgument("OOB detected due to %s=%d" % (self.max_name,
+                                          args[self.max_name]))
+            except TypeError:
+                pass
 
         # Allow the specific case of max=min-1, which disables the loop
         if args[self.max_name] < args[self.min_name]-1:
@@ -1001,6 +1007,7 @@ class AbstractIncrDimension(DerivedDimension):
     """
 
     is_Incr = True
+    is_PerfKnob = True
 
     def __init_finalize__(self, name, parent, _min, _max, step=None, size=None):
         super().__init_finalize__(name, parent)
@@ -1059,27 +1066,15 @@ class AbstractIncrDimension(DerivedDimension):
             return self._max
 
     @cached_property
-    def symbolic_rmin(self):
-        return self.symbolic_min
-
-    @cached_property
-    def symbolic_rmax(self):
-        return evalrel(min, [self._max, self.root.symbolic_max])
-
-    @cached_property
     def symbolic_incr(self):
         try:
             return sympy.Number(self.step)
         except (TypeError, ValueError):
             return self.step
 
-    @cached_property
-    def _arg_names(self):
-        try:
-            return (self.step.name,)
-        except AttributeError:
-            # `step` not a Symbol
-            return ()
+    # Pickling support
+    _pickle_args = ['name', 'parent', 'symbolic_min', 'symbolic_max']
+    _pickle_kwargs = ['step', 'size']
 
 
 class IncrDimension(AbstractIncrDimension):
@@ -1093,80 +1088,6 @@ class IncrDimension(AbstractIncrDimension):
     """
 
     is_SubIterator = True
-
-
-class RIncrDimension(IncrDimension):
-
-    """
-    Parameters
-    ----------
-    name : str
-        Name of the dimension.
-    parent : Dimension
-        The Dimension from which the IncrDimension is derived.
-    _min : expr-like
-        The minimum point of the Dimension.
-    _max : expr-like
-        The maximum point of the Dimension.
-    step : expr-like, optional
-        The distance between two consecutive points. Defaults to the
-        symbolic size.
-    size : expr-like, optional
-        The symbolic size of the Dimension. Defaults to `_max-_min+1`.
-    rmin : expr-like
-        The relaxed minimum point of the Dimension.
-    rmax : expr-like
-        The relaxed maximum point of the Dimension.
-    step : expr-like, optional
-        The relaxed step of the dimension.
-
-    Notes
-    -----
-    This type should not be instantiated directly in user code.
-    """
-
-    def __init_finalize__(self, name, parent, _min, _max, step=None, size=None,
-                          rmin=None, rmax=None, rstep=None):
-        super().__init_finalize__(name, parent, _min, _max, step, size)
-        self.rmin = rmin
-        self.rmax = rmax
-        self.rstep = rstep
-
-    @cached_property
-    def symbolic_rmin(self):
-        # If not provided return a default relaxed max template
-        if self.rmin is not None:
-            return self.rmin
-        else:
-            return self.symbolic_min
-
-    @cached_property
-    def symbolic_rmax(self):
-        # If not provided return a default relaxed max template
-        if self.rmax is not None:
-            return self.rmax
-        else:
-            return evalrel(min, [self._max, self.root.symbolic_max])
-
-    @cached_property
-    def symbolic_rstep(self):
-        # If not provided return self.step
-        if self.rstep is not None:
-            return self.rstep
-        else:
-            return self.step
-
-    @property
-    def func(self):
-        return lambda **kwargs:\
-            self.__class__(name=kwargs.get('name', self.name),
-                           parent=kwargs.get('parent', self.parent),
-                           _min=kwargs.get('_min', self._min),
-                           _max=kwargs.get('_max', self._max),
-                           step=kwargs.get('step', self.step),
-                           size=kwargs.get('size', self.size),
-                           rmax=kwargs.get('rmax', self.rmax),
-                           rmin=kwargs.get('rmin', self.rmin))
 
 
 class CustomDimension(BasicDimension):
@@ -1424,11 +1345,13 @@ class BlockDimension(AbstractIncrDimension):
         try:
             name = self.step.name
         except AttributeError:
+            # import pdb;pdb.set_trace()
             # `step` not a Symbol
             return
 
         value = args[name]
-        if isinstance(self.parent, BlockDimension):
+        # import pdb;pdb.set_trace()
+        if isinstance(self.parent, BlockDimension) or isinstance(self.parent, RIncrDimension):
             # sub-BlockDimensions must be perfect divisors of their parent
             parent_value = args[self.parent.step.name]
             if parent_value % value > 0:
@@ -1445,6 +1368,88 @@ class BlockDimension(AbstractIncrDimension):
                 raise InvalidArgument("Illegal block size `%s=%d`: it's greater than the "
                                       "iteration range and it will cause an OOB access"
                                       % (name, value))
+
+    @cached_property
+    def symbolic_rmin(self):
+        return self.symbolic_min
+
+    @cached_property
+    def symbolic_rmax(self):
+        return evalrel(min, [self._max, self.root.symbolic_max])
+
+
+class RIncrDimension(BlockDimension):
+
+    """
+    Parameters
+    ----------
+    name : str
+        Name of the dimension.
+    parent : Dimension
+        The Dimension from which the IncrDimension is derived.
+    _min : expr-like
+        The minimum point of the Dimension.
+    _max : expr-like
+        The maximum point of the Dimension.
+    step : expr-like, optional
+        The distance between two consecutive points. Defaults to the
+        symbolic size.
+    size : expr-like, optional
+        The symbolic size of the Dimension. Defaults to `_max-_min+1`.
+    rmin : expr-like
+        The relaxed minimum point of the Dimension.
+    rmax : expr-like
+        The relaxed maximum point of the Dimension.
+    step : expr-like, optional
+        The relaxed step of the dimension.
+
+    Notes
+    -----
+    This type should not be instantiated directly in user code.
+    """
+
+    def __init_finalize__(self, name, parent, _min, _max, step=None, size=None,
+                          rmin=None, rmax=None, rstep=None):
+        super().__init_finalize__(name, parent, _min, _max, step, size)
+        self.rmin = rmin
+        self.rmax = rmax
+        self.rstep = rstep
+
+    @cached_property
+    def symbolic_rmin(self):
+        # If not provided return a default relaxed max template
+        if self.rmin is not None:
+            return self.rmin
+        else:
+            return self.symbolic_min
+
+    @cached_property
+    def symbolic_rmax(self):
+        # If not provided return a default relaxed max template
+        if self.rmax is not None:
+            return self.rmax
+        else:
+            return evalrel(min, [self._max, self.root.symbolic_max])
+
+    @cached_property
+    def symbolic_rstep(self):
+        # If not provided return self.step
+        if self.rstep is not None:
+            return self.rstep
+        else:
+            return self.step
+
+    @property
+    def func(self):
+        return lambda **kwargs:\
+            self.__class__(name=kwargs.get('name', self.name),
+                           parent=kwargs.get('parent', self.parent),
+                           _min=kwargs.get('_min', self._min),
+                           _max=kwargs.get('_max', self._max),
+                           step=kwargs.get('step', self.step),
+                           size=kwargs.get('size', self.size),
+                           rmax=kwargs.get('rmax', self.rmax),
+                           rmin=kwargs.get('rmin', self.rmin))
 
 
 def dimensions(names):
