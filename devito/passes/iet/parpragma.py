@@ -438,7 +438,7 @@ class PragmaDeviceAwareTransformer(DeviceAwareMixin, PragmaShmTransformer):
 
         if self._is_offloadable(root):
             # Get the collapsable Iterations
-            collapsable = self._find_collapsable(root, candidates)
+            # collapsable = self._find_collapsable(root, candidates)
             ncollapse = 1 + len(collapsable)
             #    body = self.DeviceIteration(nthreads=self.thread_limit, **root.args)
             if nthreads is None and not thread_limit:
